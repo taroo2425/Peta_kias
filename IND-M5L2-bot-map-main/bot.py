@@ -3,6 +3,7 @@ from logic import *
 import discord
 from discord.ext import commands
 from config import TOKEN
+import matplotlib.colors as mcolors
 
 # Menginisiasi pengelola database
 manager = DB_Map("database.db")
@@ -29,14 +30,30 @@ async def help_me(ctx: commands.Context):
         "_Contoh:_\n"
         "`!show_city London`\n"
         "`!remember_city Jakarta`\n"
-        "`!show_my_cities`"
+        "`!show_my_cities`\n"
+        "`(contoh: !show_city New York|#00ff00 atau !show_city London|blue)`"
     )
     await ctx.send(help_text)
 
 @bot.command()
-async def show_city(ctx: commands.Context, *, city_name: str = ""):
-    if not city_name.strip():
+async def show_city(ctx: commands.Context, *, city_arg: str = ""):
+    """
+    Pemakaian:
+    - !show_city City Name
+    - !show_city City Name|color   (contoh: !show_city New York|#00ff00 atau !show_city London|blue)
+    """
+    if not city_arg.strip():
         await ctx.send("Silakan tulis nama kota setelah perintah, misalnya: `!show_city London`")
+        return
+
+    # Parse optional color after '|' separator
+    parts = city_arg.rsplit('|', 1)
+    city_name = parts[0].strip()
+    color = parts[1].strip() if len(parts) == 2 else 'red'
+
+    # Validasi warna
+    if not mcolors.is_color_like(color):
+        await ctx.send(f"Warna '{color}' tidak dikenali. Gunakan nama warna (contoh: blue) atau kode hex (contoh: #00ff00).")
         return
 
     coordinates = manager.get_coordinates(city_name)
@@ -48,7 +65,7 @@ async def show_city(ctx: commands.Context, *, city_name: str = ""):
         return
 
     image_path = f"map_{ctx.author.id}.png"
-    success = manager.create_graph(image_path, [city_name])
+    success = manager.create_graph(image_path, [city_name], marker_color=color)
 
     if not success:
         await ctx.send("Terjadi masalah saat menggambar peta. Coba lagi nanti.")
@@ -56,12 +73,24 @@ async def show_city(ctx: commands.Context, *, city_name: str = ""):
 
     file = discord.File(image_path, filename="city_map.png")
     await ctx.send(
-        content=f"Berikut peta untuk kota **{city_name}**:",
+        content=f"Berikut peta untuk kota **{city_name}** (color: {color}):",
         file=file
     )
-
 @bot.command()
-async def show_my_cities(ctx: commands.Context):
+async def show_my_cities(ctx: commands.Context, color: str = ""):
+    """
+    Pemakaian:
+    - !show_my_cities
+    - !show_my_cities blue
+    - Atau: !show_my_cities #00ff00
+    Jika ingin nama kota multi-kata tidak perlu memodifikasi (kita ambil warna sebagai argumen opsional tunggal).
+    """
+    # Jika warna tidak diberikan, pakai default 'red'
+    marker_color = color.strip() if color else 'red'
+    if marker_color and not mcolors.is_color_like(marker_color):
+        await ctx.send(f"Warna '{marker_color}' tidak dikenali. Gunakan nama warna atau kode hex.")
+        return
+
     cities = manager.select_cities(ctx.author.id)  # Mengambil daftar kota yang diingat oleh pengguna
 
     if not cities:
@@ -72,7 +101,7 @@ async def show_my_cities(ctx: commands.Context):
         return
 
     image_path = f"map_user_{ctx.author.id}.png"
-    success = manager.create_graph(image_path, cities)
+    success = manager.create_graph(image_path, cities, marker_color=marker_color)
 
     if not success:
         await ctx.send("Tidak ada koordinat kota yang valid untuk digambar. Coba simpan kota lain.")
@@ -81,10 +110,9 @@ async def show_my_cities(ctx: commands.Context):
     file = discord.File(image_path, filename="my_cities_map.png")
     city_list = ", ".join(cities)
     await ctx.send(
-        content=f"Berikut peta kota-kota yang Anda simpan: **{city_list}**",
+        content=f"Berikut peta kota-kota yang Anda simpan: **{city_list}** (color: {marker_color})",
         file=file
     )
-
 @bot.command()
 async def remember_city(ctx: commands.Context, *, city_name=""):
     if manager.add_city(ctx.author.id, city_name):  # Memeriksa apakah kota ada dalam database; jika ya, menambahkannya ke memori pengguna
